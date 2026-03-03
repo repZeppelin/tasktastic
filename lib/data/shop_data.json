@@ -1,0 +1,32 @@
+[
+  {
+    "title": "🍔 FOOD",
+    "items": [
+      { "name": "Pizza Slice", "description": "Standard issue nutrition triangle. Guaranteed 15% satisfaction rate.", "price": 15, "icon_name": "pizza", "accent_hex": 4294951168 },
+      { "name": "Burger", "description": "Synthetic protein compressed between wheat-adjacent buns. Filling.", "price": 12, "icon_name": "burger", "accent_hex": 4294918231 },
+      { "name": "Taco Shell", "description": "Crunchy delivery system for seasoned beef-like substances.", "price": 8, "icon_name": "taco", "accent_hex": 4294961920 },
+      { "name": "Ramen Bowl", "description": "Hydrated sodium strands. Optimized for high-energy long nights.", "price": 25, "icon_name": "ramen", "accent_hex": 4280361249 },
+      { "name": "Soda Can", "description": "Liquid carbonation with roughly 400% of your daily sugar limit.", "price": 5, "icon_name": "soda", "accent_hex": 4280391411 },
+      { "name": "Coffee Cup", "description": "Critical system lubricant. Prevents biological shutdown.", "price": 18, "icon_name": "coffee", "accent_hex": 4285873455 },
+      { "name": "Ice Cream", "description": "Sub-zero dairy luxury. Temporary happiness module.", "price": 14, "icon_name": "ice_cream", "accent_hex": 4294944255 },
+      { "name": "Sushi Roll", "description": "Precisely sliced oceanic proteins. Highly efficient fuel.", "price": 45, "icon_name": "sushi", "accent_hex": 4283215696 },
+      { "name": "Hot Dog", "description": "Cylindrical mystery meat. The pinnacle of street-side efficiency.", "price": 7, "icon_name": "hot_dog", "accent_hex": 4294924288 },
+      { "name": "Donut", "description": "Circular pastry with a structural void. Sweetness level: Maximum.", "price": 10, "icon_name": "donut", "accent_hex": 4294935471 }
+    ]
+  },
+  {
+    "title": "🐶 PETS",
+    "items": [
+      { "name": "Golden Dog", "description": "Biological companion v4.2. High loyalty parameters detected.", "price": 500, "icon_name": "dog", "accent_hex": 4280391411 },
+      { "name": "Tabby Cat", "description": "Independent feline unit. Primarily useful for moral stabilization.", "price": 350, "icon_name": "cat", "accent_hex": 4291611852 },
+      { "name": "Pet Rabbit", "description": "High-speed herbivore. Exceptional sensory range.", "price": 220, "icon_name": "rabbit", "accent_hex": 4294961920 },
+      { "name": "Small Parrot", "description": "Avian communication unit. May repeat sensitive data fragments.", "price": 450, "icon_name": "parrot", "accent_hex": 4283215696 },
+      { "name": "Green Iguana", "description": "Cold-blooded recon unit. Very quiet, very still.", "price": 280, "icon_name": "lizard", "accent_hex": 4278238420 },
+      { "name": "Tiny Hamster", "description": "Pocket-sized stress reliever. Minimal maintenance required.", "price": 100, "icon_name": "hamster", "accent_hex": 4294940544 },
+      { "name": "Binary Owl", "description": "Nocturnal observer. Nocturnal vision exceeds standard limits.", "price": 750, "icon_name": "owl", "accent_hex": 4284572005 },
+      { "name": "Mecha Turtle", "description": "Slow-moving armored companion. Virtually indestructible.", "price": 600, "icon_name": "turtle", "accent_hex": 4285873455 },
+      { "name": "Micro Pig", "description": "Intelligent mammalian unit. Highly adept at finding hidden items.", "price": 400, "icon_name": "pig", "accent_hex": 4294951168 },
+      { "name": "Ghost Ferret", "description": "Elusive, sleek, and highly agile. Hard to track.", "price": 550, "icon_name": "ferret", "accent_hex": 4290822336 }
+    ]
+  }
+]
