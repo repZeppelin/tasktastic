@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:math';
+import 'package:finaltasktastic/scripts/data_handler.dart';
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:provider/provider.dart';
 
 class NoirPopouts {
   static final AudioPlayer _player = AudioPlayer();
@@ -109,6 +111,22 @@ class NoirPopouts {
       },
       pageBuilder: (context, anim1, anim2) =>
           _NoirRatingWidget(title: title, initialRating: initialRating),
+    );
+  }
+
+  /// 5. FRAUD LOG: Shows list of flagged tasks from Supabase
+  static void showFraudLog(BuildContext context) {
+    _playBeep();
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: "DISMISS",
+      barrierColor: Colors.black.withOpacity(0.9),
+      transitionDuration: const Duration(milliseconds: 300),
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return _buildTerminalTransition(animation, child);
+      },
+      pageBuilder: (context, anim1, anim2) => const _NoirFraudLogWidget(),
     );
   }
 
@@ -659,6 +677,287 @@ class _NoirRatingWidgetState extends State<_NoirRatingWidget> {
                         fontWeight: FontWeight.bold,
                         fontFamily: 'monospace',
                         letterSpacing: 2,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NoirFraudLogWidget extends StatefulWidget {
+  const _NoirFraudLogWidget();
+
+  @override
+  State<_NoirFraudLogWidget> createState() => _NoirFraudLogWidgetState();
+}
+
+class _NoirFraudLogWidgetState extends State<_NoirFraudLogWidget> {
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 360, maxHeight: 500),
+          margin: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0A0A0A),
+            border: Border.all(color: Colors.black, width: 4),
+            boxShadow: const [
+              BoxShadow(color: Colors.black, offset: Offset(10, 10)),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // HEADER
+              Container(
+                width: double.infinity,
+                color: Colors.black,
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _GlitchText(
+                      "[ SECURITY_BREACH_DETECTED ]",
+                      style: const TextStyle(
+                        color: Color(0xFFFF4444),
+                        fontSize: 9,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                    const Text(
+                      "FLAGGED_OPERATIONS",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // DATA LIST
+              Flexible(
+                child: Column(
+                  children: [
+                    // --- AUDIT_LIST_VIEW ---
+                    Expanded(
+                      child: RefreshIndicator(
+                        color: const Color(0xFF00FF41),
+                        backgroundColor: Colors.black,
+                        onRefresh: () async {
+                          setState(() {});
+                        },
+                        child: FutureBuilder<List<Map<String, dynamic>>>(
+                          // Updated to use the merged function
+                          future: TaskTable().getAuditLogs(),
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return const Center(
+                                child: CircularProgressIndicator(
+                                  color: Color(0xFF00FF41),
+                                ),
+                              );
+                            }
+
+                            final logs = snapshot.data ?? [];
+
+                            if (logs.isEmpty) {
+                              return ListView(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                children: const [
+                                  Padding(
+                                    padding: EdgeInsets.all(30.0),
+                                    child: Center(
+                                      child: Text(
+                                        "NO_AUDIT_RECORDS_FOUND\n(PULL TO RESCAN)",
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: Color(0xFF00FF41),
+                                          fontFamily: 'monospace',
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            }
+
+                            return ListView.separated(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              padding: const EdgeInsets.all(15),
+                              itemCount: logs.length,
+                              separatorBuilder: (ctx, i) =>
+                                  const Divider(color: Colors.white10),
+                              itemBuilder: (ctx, i) {
+                                final item = logs[i];
+                                final bool isPaid = item['is_paid'] ?? false;
+                                final bool isSuspicious =
+                                    item['is_suspicious'] ?? false;
+
+                                // Determine UI styling based on the specific audit reason
+                                final Color statusColor = isSuspicious
+                                    ? const Color(0xFFFF4444) // Red for Fraud
+                                    : const Color(
+                                        0xFF00FF41,
+                                      ); // Green for Cleared
+
+                                return ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  title: Text(
+                                    item['title']?.toUpperCase() ??
+                                        "UNKNOWN_ID",
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  subtitle: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        "COINS: ${item['coins']} | DIFF: ${item['difficulty']}",
+                                        style: const TextStyle(
+                                          color: Color(0xFF00FF41),
+                                          fontSize: 10,
+                                          fontFamily: 'monospace',
+                                        ),
+                                      ),
+                                      RichText(
+                                        text: TextSpan(
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                            fontFamily: 'monospace',
+                                          ),
+                                          children: [
+                                            const TextSpan(
+                                              text: "STATUS: ",
+                                              style: TextStyle(
+                                                color: Colors.white38,
+                                              ),
+                                            ),
+                                            TextSpan(
+                                              text: isSuspicious
+                                                  ? "VOID_FRAUDULENT"
+                                                  : "CLEARED_UNPAID",
+                                              style: TextStyle(
+                                                color: statusColor,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  trailing: Icon(
+                                    isSuspicious
+                                        ? Icons.gavel_rounded
+                                        : Icons.verified_user_outlined,
+                                    color: statusColor,
+                                    size: 18,
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+
+                    // --- STATIC_CLAIM_FOOTER ---
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(15),
+                      decoration: const BoxDecoration(
+                        color: Colors.black,
+                        border: Border(top: BorderSide(color: Colors.white10)),
+                      ),
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF00FF41),
+                          foregroundColor: Colors.black,
+                          minimumSize: const Size(double.infinity, 45),
+                          shape: const RoundedRectangleBorder(),
+                        ),
+                        onPressed: () async {
+                          int totalGained = await TaskTable()
+                              .claimValidRewards();
+
+                          if (mounted && totalGained > 0) {
+                            context.read<Player>().add_to_wallet(totalGained);
+
+                            setState(() {});
+                          }
+                        },
+                        icon: const Icon(
+                          Icons.account_balance_wallet,
+                          size: 18,
+                        ),
+                        label: const Text(
+                          "RUN_CLAIM_PROTOCOL",
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // FOOTER / CONTACT
+              const Padding(
+                padding: EdgeInsets.all(15.0),
+                child: Text(
+                  "RECORDS MARKED AS FRAUDULENT ARE SUBJECT TO AUDIT. CONTACT ADMINS TO APPEAL PROTOCOL.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white24,
+                    fontSize: 9,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ),
+
+              GestureDetector(
+                onTap: () async {
+                  final rootContext = Navigator.of(context).context;
+
+                  // 2. Pop immediately
+                  Navigator.pop(context, 0);
+
+                  // 3. Trigger feedback on the root context
+                  NoirPopouts.triggerRandomFeedback(
+                    rootContext,
+                    'FRAUDULENT LOGS',
+                  );
+                },
+                child: Container(
+                  width: double.infinity,
+                  height: 50,
+                  color: const Color(0xFFFF4444),
+                  child: const Center(
+                    child: Text(
+                      "CLOSE_STREAMS",
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1,
                       ),
                     ),
                   ),

@@ -110,7 +110,6 @@ class _HomepageState extends State<Homepage> {
         // 1. Task List takes up the top space
         Expanded(child: TaskListView()),
 
-        // 2. Control Row (Confirm Logs and Add Task)
         Row(
           children: [
             // --- CONFIRM LOGS BUTTON ---
@@ -127,29 +126,47 @@ class _HomepageState extends State<Homepage> {
                       onTap: canFinalize
                           ? () {
                               int totalGainedXP = 0;
+                              bool hasFraud = false;
+
                               for (var task in taskTableProvider.taskList) {
                                 if (task.taskStatus == true) {
+                                  // 1. Check fraud using your new helper function
+                                  if (taskTableProvider.isTaskFraudulent(
+                                    task,
+                                  )) {
+                                    hasFraud = true;
+                                    // Skip adding XP for this specific task
+                                    continue;
+                                  }
+
+                                  // 2. Only add XP if the task passed the fraud check
                                   totalGainedXP += _calculateXP(
                                     task.difficulty,
                                   );
                                 }
                               }
-
                               setState(() {
                                 taskTableProvider.removeFalseTrue(context);
                               });
-
                               if (totalGainedXP > 0) {
                                 Player().addXP(context, totalGainedXP);
-                                // Using your Noir Toast for consistency
+
                                 showTopSnackBar(
                                   context,
-                                  "Task accomplished! Gained $totalGainedXP XP",
+                                  "DOSSIERS PROCESSED: +$totalGainedXP XP",
                                   Colors.green,
                                 );
+
                                 NoirPopouts.triggerRandomFeedback(
                                   context,
                                   "TASK SUBMISSION",
+                                );
+                              }
+                              if (hasFraud) {
+                                showTopSnackBar(
+                                  context,
+                                  "RECORDS FLAGGED: XP WITHHELD FOR SPEEDRUNNING",
+                                  const Color(0xFFB71C1C), // Your Noir Red
                                 );
                               }
                             }
@@ -217,10 +234,13 @@ class _HomepageState extends State<Homepage> {
                       context: context,
                       builder: (context) => CreateTaskDialog(
                         onSave: (name, desc, diff, deadline) async {
-                          context.read<TaskTable>().addTask(name, desc, diff, deadline);
-                          setState(() {
-                            print("dick");
-                          });
+                          context.read<TaskTable>().addTask(
+                            name,
+                            desc,
+                            diff,
+                            deadline,
+                          );
+                          setState(() {});
                         },
                       ),
                     );
@@ -333,10 +353,13 @@ class _CreateTaskDialogState extends State<CreateTaskDialog> {
 
                     const Text(
                       "PRIORITY LEVEL",
-                      style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12,
+                      ),
                     ),
                     const SizedBox(height: 8),
-                    
+
                     // --- UPDATED PRIORITY CHIPS ---
                     Row(
                       children: [
@@ -347,11 +370,14 @@ class _CreateTaskDialogState extends State<CreateTaskDialog> {
                         _buildPriorityChip(3, "LVL 3", Colors.red),
                       ],
                     ),
-                    
+
                     const SizedBox(height: 24),
                     const Text(
                       "DEADLINE SETTINGS",
-                      style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12,
+                      ),
                     ),
                     const SizedBox(height: 8),
 
@@ -360,8 +386,8 @@ class _CreateTaskDialogState extends State<CreateTaskDialog> {
                       children: [
                         _buildPickerChip(
                           Icons.calendar_today,
-                          _dateInserted 
-                              ? "${_deadline?.day}/${_deadline?.month}" 
+                          _dateInserted
+                              ? "${_deadline?.day}/${_deadline?.month}"
                               : 'SET DAY',
                           _pickDate,
                         ),
@@ -414,7 +440,10 @@ class _CreateTaskDialogState extends State<CreateTaskDialog> {
           padding: const EdgeInsets.symmetric(vertical: 8),
           decoration: BoxDecoration(
             color: isSelected ? color : Colors.white,
-            border: Border.all(color: isSelected ? color : Colors.black, width: 2),
+            border: Border.all(
+              color: isSelected ? color : Colors.black,
+              width: 2,
+            ),
             borderRadius: BorderRadius.circular(2),
           ),
           child: Text(
@@ -453,7 +482,7 @@ class _CreateTaskDialogState extends State<CreateTaskDialog> {
                   color: Colors.white,
                   fontSize: 10,
                   fontWeight: FontWeight.bold,
-                  fontFamily: 'monospace'
+                  fontFamily: 'monospace',
                 ),
               ),
             ],
@@ -572,7 +601,8 @@ class _CreateTaskDialogState extends State<CreateTaskDialog> {
               onPrimary: Colors.white,
               surface: Colors.white,
               onSurface: Colors.black,
-            ), dialogTheme: DialogThemeData(backgroundColor: Colors.white),
+            ),
+            dialogTheme: DialogThemeData(backgroundColor: Colors.white),
           ),
           child: child!,
         );

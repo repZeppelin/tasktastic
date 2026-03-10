@@ -1,3 +1,4 @@
+import 'package:finaltasktastic/views/global_popouts.dart';
 import 'package:finaltasktastic/views/snackbars.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -84,6 +85,7 @@ class _MarketplaceState extends State<Marketplace> {
     } else {
       showTopSnackBar(context, "INSUFFICIENT FUNDS", Colors.red[900]!);
     }
+    NoirPopouts.triggerRandomFeedback(context, "Marketplace Interaction");
   }
 
   @override

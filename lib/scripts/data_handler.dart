@@ -23,7 +23,8 @@ const Map<String, IconData> iconMapping = {
   'cat': Icons.pets_rounded, // Use common pets icon
   'rabbit': Icons.cruelty_free_rounded,
   'parrot': Icons.flutter_dash_rounded, // Looks like a bird
-  'lizard': Icons.pest_control_rodent_rounded, // Closest match for small reptile
+  'lizard':
+      Icons.pest_control_rodent_rounded, // Closest match for small reptile
   'hamster': Icons.catching_pokemon, // Round/small vibe
   'owl': Icons.visibility_rounded, // Observation theme
   'turtle': Icons.slow_motion_video_rounded, // Abstract shell vibe
@@ -83,172 +84,350 @@ class Task {
 
 class TaskTable extends ChangeNotifier {
   List<Task> taskList = [];
+  
   TaskTable._privateConstructor();
   static final TaskTable _instance = TaskTable._privateConstructor();
-  factory TaskTable() {
-    return _instance;
-  }
+  factory TaskTable() => _instance;
 
-  Future<void> syncTasks() async {
+  // --- INTERNAL HELPER: DATABASE UPLINK ---
+
+  Future<void> _appendToHistory({
+    required String taskName,
+    required int coinAmount,
+    required bool isFraudulent,
+    required bool payoutStatus,
+  }) async {
     try {
-      final userId = Player().id;
-      if (userId == 0) return;
+      final int searchId = Player().id;
+      if (searchId == 0) return;
 
-      // Map the taskList to a list of JSON objects
-      final List<Map<String, dynamic>> jsonData = taskList
-          .map((task) => task.toJson())
-          .toList();
+      // Safety check: Retrieve current history using dual-ID check
+      final List<dynamic> data = await Supabase.instance.client
+          .from('tasktastic')
+          .select('task_history')
+          .or('id.eq.$searchId,user_id.eq.$searchId');
 
+      if (data.isEmpty) {
+        debugPrint("DEBUG: [SYS_ERR] ID $searchId NOT FOUND IN DATABASE");
+        return;
+      }
+
+      List<dynamic> currentHistory = data[0]['task_history'] != null
+          ? List.from(data[0]['task_history'])
+          : [];
+
+      currentHistory.add({
+        'title': taskName,
+        'coins': coinAmount,
+        'is_suspicious': isFraudulent,
+        'is_paid': payoutStatus,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+
+      // Update using same dual-ID pattern
       await Supabase.instance.client
           .from('tasktastic')
-          .update({'task_data': jsonData}) // Update the specific column
-          .eq('user_id', userId);
+          .update({'task_history': currentHistory})
+          .or('id.eq.$searchId,user_id.eq.$searchId');
 
-      debugPrint(
-        "DEBUG: [TASK_SYNC] Successfully uploaded/removed ${taskList.length} tasks.",
-      );
+      debugPrint("DEBUG: [SYS_UPLINK] SUCCESS_FOR_ID_$searchId");
     } catch (e) {
-      debugPrint("DEBUG: [TASK_SYNC_ERROR] $e");
+      debugPrint("DEBUG: [SYS_CRITICAL_FAILURE] -> $e");
     }
   }
 
-  Future<void> loadTasksFromSupabase() async {
-    try {
-      final userId = Player().id;
-      if (userId == 0) return;
+  // --- PUBLIC MISSION DATA METHODS ---
 
-      debugPrint("DEBUG: [TASK_LOAD] Fetching mission data for ID: $userId...");
+  Future<void> syncTasks() async {
+  final int searchId = Player().id;
+  debugPrint("DEBUG: [SYNC_INIT] Preparing upload for ID: $searchId");
+
+  if (searchId == 0) {
+    debugPrint("DEBUG: [SYNC_ABORT] No active Operative ID found. Sync cancelled.");
+    return;
+  }
+
+  try {
+    // Checkpoint 1: Mapping Data
+    final List<Map<String, dynamic>> jsonData = taskList.map((task) {
+      final json = task.toJson();
+      // REMOVED: json.remove('description'); 
+      // The description is now preserved in the payload.
+      return json;
+    }).toList();
+
+    debugPrint("DEBUG: [SYNC_PAYLOAD_READY] ${jsonData.length} tasks serialized.");
+
+    // Checkpoint 2: Database Update
+    final response = await Supabase.instance.client
+        .from('tasktastic')
+        .update({'task_data': jsonData})
+        .or('id.eq.$searchId,user_id.eq.$searchId')
+        .select(); // Calling .select() confirms what was actually written
+
+    if (response != null) {
+      debugPrint("DEBUG: [SYNC_SUCCESS] Database updated for ID: $searchId");
+    } else {
+      debugPrint("DEBUG: [SYNC_WARNING] Update executed but returned no confirmation.");
+    }
+
+  } catch (e) {
+    // Checkpoint 3: Critical Failure
+    debugPrint("DEBUG: [SYNC_CRITICAL_ERROR] -> $e");
+  }
+}
+
+  Future<void> loadTasksFromSupabase() async {
+  final int searchId = Player().id;
+  debugPrint("DEBUG: [RECOVERY_INIT] Attempting task retrieval for ID: $searchId");
+
+  if (searchId == 0) {
+    debugPrint("DEBUG: [RECOVERY_ABORT] No active Operative ID found.");
+    return;
+  }
+
+  try {
+    // Checkpoint 1: Database Request
+    final response = await Supabase.instance.client
+        .from('tasktastic')
+        .select('task_data')
+        .or('id.eq.$searchId,user_id.eq.$searchId')
+        .maybeSingle();
+
+    if (response == null) {
+      debugPrint("DEBUG: [RECOVERY_VOID] No database row exists for ID: $searchId");
+      return;
+    }
+
+    final dynamic rawData = response['task_data'];
+    if (rawData == null) {
+      debugPrint("DEBUG: [RECOVERY_EMPTY] task_data column is NULL in database.");
+      taskList.clear();
+      notifyListeners();
+      return;
+    }
+
+    final List<dynamic> remoteData = rawData;
+    debugPrint("DEBUG: [RECOVERY_DATA_FOUND] Processing ${remoteData.length} entries...");
+
+    taskList.clear();
+
+    for (int i = 0; i < remoteData.length; i++) {
+      try {
+        final Map<String, dynamic> taskMap = remoteData[i] as Map<String, dynamic>;
+        
+        // Checkpoint 2: Individual Field Validation
+        // We use ?? (null-coalescing) to prevent the "Null is not a subtype of String" crash
+        final String tName = taskMap['name'] ?? "UNKNOWN_NAME";
+        final String tDesc = taskMap['description'] ?? "REDACTED_OR_MISSING";
+        final int tDiff = taskMap['difficulty'] ?? 1;
+        final String? tDeadlineRaw = taskMap['deadline'];
+        final String? tCreatedRaw = taskMap['created_at'];
+
+        taskList.add(Task(
+          id: taskMap['id'] ?? DateTime.now().millisecondsSinceEpoch + i,
+          name: tName,
+          description: tDesc,
+          difficulty: tDiff,
+          deadline: tDeadlineRaw != null ? DateTime.parse(tDeadlineRaw) : DateTime.now(),
+          createdAt: tCreatedRaw != null ? DateTime.parse(tCreatedRaw) : DateTime.now(),
+          taskStatus: taskMap['status'], // bool? allows null
+        ));
+
+        debugPrint("DEBUG: [RECOVERY_SUCCESS] Task '$tName' restored.");
+      } catch (itemErr) {
+        debugPrint("DEBUG: [RECOVERY_ITEM_FAIL] Entry #$i failed: $itemErr");
+        // We continue the loop so one bad task doesn't hide all the others
+      }
+    }
+
+    notifyListeners();
+    debugPrint("DEBUG: [RECOVERY_COMPLETE] Total Tasks Restored: ${taskList.length}");
+
+  } catch (e) {
+    // Checkpoint 3: Critical System Failure
+    debugPrint("DEBUG: [SYS_CRITICAL_RECOVERY_FAILURE] -> $e");
+  }
+}
+  Future<List<Map<String, dynamic>>> getAuditLogs() async {
+    final int searchId = Player().id;
+    if (searchId == 0) return [];
+
+    try {
+      final response = await Supabase.instance.client
+          .from('tasktastic')
+          .select('task_history')
+          .or('id.eq.$searchId,user_id.eq.$searchId')
+          .maybeSingle();
+
+      if (response == null || response['task_history'] == null) return [];
+
+      final List<dynamic> history = response['task_history'];
+      return history.whereType<Map<String, dynamic>>().where((entry) {
+        final bool isSuspicious = entry['is_suspicious'] ?? false;
+        final bool isPaid = entry['is_paid'] ?? false;
+        return isSuspicious || (!isSuspicious && !isPaid);
+      }).toList();
+    } catch (e) {
+      debugPrint("TERMINAL_ERROR: FAILED_TO_FETCH_AUDIT_LOGS -> $e");
+      return [];
+    }
+  }
+
+  Future<int> claimValidRewards() async {
+    try {
+      final player = Player();
+      final int searchId = player.id;
 
       final response = await Supabase.instance.client
           .from('tasktastic')
-          .select('task_data')
-          .eq('user_id', userId)
+          .select('task_history')
+          .or('id.eq.$searchId,user_id.eq.$searchId')
           .single();
 
-      final List<dynamic> remoteData = response['task_data'] ?? [];
+      final dynamic historyData = response['task_history'];
+      if (historyData == null || historyData is! List) return 0;
 
-      // Clear existing local list to prevent duplicates
-      taskList.clear();
+      List<dynamic> history = List.from(historyData);
+      int totalToClaim = 0;
+      bool hasChanges = false;
 
-      for (var item in remoteData) {
-        final Map<String, dynamic> taskMap = item as Map<String, dynamic>;
-
-        // Convert JSON back into a Task object
-        taskList.add(
-          Task(
-            id: taskMap['id'],
-            name: taskMap['name'],
-            description: taskMap['description'],
-            difficulty: taskMap['difficulty'],
-            deadline: DateTime.parse(taskMap['deadline']),
-            createdAt: DateTime.parse(taskMap['created_at']),
-            taskStatus: taskMap['status'],
-          ),
-        );
+      for (var entry in history) {
+        if (entry is Map<String, dynamic>) {
+          if (entry['is_suspicious'] == false && entry['is_paid'] == false) {
+            totalToClaim += (entry['coins'] as num).toInt();
+            entry['is_paid'] = true;
+            hasChanges = true;
+          }
+        }
       }
 
-      notifyListeners();
-      debugPrint(
-        "DEBUG: [TASK_LOAD] SUCCESS: ${taskList.length} tasks restored.",
-      );
+      if (hasChanges) {
+        await Supabase.instance.client
+            .from('tasktastic')
+            .update({'task_history': history})
+            .or('id.eq.$searchId,user_id.eq.$searchId');
+
+        player.add_to_wallet(totalToClaim);
+      }
+
+      return totalToClaim;
     } catch (e) {
-      debugPrint(
-        "DEBUG: [TASK_LOAD_ERROR] Failed to reconstruct task table: $e",
-      );
+      debugPrint("CLAIM_PROTOCOL_FAILURE: $e");
+      return 0;
     }
   }
 
-  void addTask(
-    String name,
-    String description,
-    int difficulty,
-    DateTime deadline,
-  ) {
+  Future<void> approveFraudulentTask(int dbId, Map<String, dynamic> targetTask) async {
+    try {
+      final response = await Supabase.instance.client
+          .from('tasktastic')
+          .select('task_history')
+          .or('id.eq.$dbId,user_id.eq.$dbId')
+          .single();
+
+      List<dynamic> history = response['task_history'] ?? [];
+
+      for (var task in history) {
+        if (task['title'] == targetTask['title'] &&
+            task['timestamp'] == targetTask['timestamp']) {
+          task['is_suspicious'] = false;
+        }
+      }
+
+      await Supabase.instance.client
+          .from('tasktastic')
+          .update({'task_history': history})
+          .or('id.eq.$dbId,user_id.eq.$dbId');
+    } catch (e) {
+      debugPrint("AUDIT_RECON_FAILURE: $e");
+    }
+  }
+
+  // --- LOCAL STATE MANAGEMENT ---
+
+  void addTask(String name, String description, int difficulty, DateTime deadline) {
     final newTask = Task(
       name: name,
       description: description,
       difficulty: difficulty,
-      id: DateTime.now().millisecondsSinceEpoch, // Better ID than list length
+      id: DateTime.now().millisecondsSinceEpoch,
       deadline: deadline,
     );
     taskList.add(newTask);
     notifyListeners();
-    syncTasks(); // Sync to DB
+    syncTasks();
   }
 
   void removeTask(int id) {
     taskList.removeWhere((task) => task.id == id);
     notifyListeners();
-    syncTasks(); // Sync to DB
+    syncTasks();
   }
 
   void nullifyTask(int id) {
-    final task = taskList.firstWhere(
-      (task) => task.id == id,
-      orElse: () => throw Exception('Task with id $id not found'),
-    );
-    task.taskStatus = null;
+    getTaskById(id).taskStatus = null;
     notifyListeners();
   }
 
   void falsifyTask(int id) {
-    final task = taskList.firstWhere(
-      (task) => task.id == id,
-      orElse: () => throw Exception('Task with id $id not found'),
-    );
-    task.taskStatus = false;
+    getTaskById(id).taskStatus = false;
     notifyListeners();
   }
 
   void truthifyTask(int id) {
-    final task = taskList.firstWhere(
-      (task) => task.id == id,
-      orElse: () => throw Exception('Task with id $id not found'),
-    );
-    task.taskStatus = true;
+    getTaskById(id).taskStatus = true;
     notifyListeners();
   }
 
-  Task getTaskById(int id) {
-    return taskList.firstWhere(
-      (task) => task.id == id,
-      orElse: () => throw Exception('Task with id $id not found'),
-    );
-  }
+  Task getTaskById(int id) => taskList.firstWhere((t) => t.id == id);
 
-  int getTaskTableLength() {
-    return taskList.length;
-  }
+  int getTaskTableLength() => taskList.length;
 
   bool get hasTasksToFinalize => taskList.any((t) => t.taskStatus != null);
 
   Iterable<Task> iterateThroughTask() {
-    return taskList.where((t) => t.taskStatus == false || t.taskStatus == true);
+    return taskList.where((t) => t.taskStatus != null);
   }
 
-  void removeFalseTrue(context) {
-    for (var x in iterateThroughTask()) {
-      switch (x.taskStatus) {
-        case true:
-          final amount = switch (x.difficulty) {
-            3 => 100,
-            2 => 50,
-            1 => 25,
-            _ => throw UnimplementedError(
-              'Difficulty ${x.difficulty} not handled',
-            ),
-          };
+  bool isTaskFraudulent(dynamic task) {
+    final duration = DateTime.now().difference(task.createdAt).inMinutes;
+    return duration < 2;
+  }
+
+  void removeFalseTrue(BuildContext context) async {
+    for (var x in iterateThroughTask().toList()) {
+      if (x.taskStatus == true) {
+        final bool isFraud = isTaskFraudulent(x);
+        final bool rewardsPaid = !isFraud;
+
+        final int amount = switch (x.difficulty) {
+          3 => 100,
+          2 => 50,
+          1 => 25,
+          _ => 0,
+        };
+
+        await _appendToHistory(
+          taskName: x.name,
+          coinAmount: amount,
+          isFraudulent: isFraud,
+          payoutStatus: rewardsPaid,
+        );
+
+        if (rewardsPaid) {
           Player().add_to_wallet(amount);
-          showTopSnackBar(context, '+$amount coins!', Colors.orange);
-          break;
-        case false:
-          showBottomSnackBar(context, 'Gave up on task ${x.name}.', Colors.red);
-          break;
-        default:
+          showTopSnackBar(context, '+$amount CC RECEIVED', Colors.orange);
+        } else {
+          showTopSnackBar(context, 'PAYOUT_WITHHELD: SECURITY_BREACH', const Color(0xFFB71C1C));
+          NoirPopouts.triggerRandomFeedback(context, "FRAUD_DETECTED");
+        }
+      } else if (x.taskStatus == false) {
+        showBottomSnackBar(context, 'TASK ABANDONED: ${x.name}', Colors.red);
       }
-      (x.taskStatus);
     }
-    taskList.removeWhere((t) => t.taskStatus == false || t.taskStatus == true);
+
+    taskList.removeWhere((t) => t.taskStatus != null);
     syncTasks();
   }
 }
@@ -264,27 +443,48 @@ class PetHolder with ChangeNotifier {
   // --- DATABASE SYNC ---
   Future<void> syncPets() async {
     try {
-      final userId = Player().id;
-      if (userId == 0) return;
+      final int searchId = Player().id;
+      if (searchId == 0) return;
 
       await Supabase.instance.client
           .from('tasktastic')
           .update({'pet_data': existingPets.map((p) => p.toJson()).toList()})
-          .eq('user_id', userId);
+          .or('id.eq.$searchId,user_id.eq.$searchId'); // Dual-ID Safety
+          
       debugPrint("DEBUG: [PET_SYNC] Vitals updated in cloud.");
     } catch (e) {
       debugPrint("DEBUG: [PET_SYNC_ERR] $e");
     }
   }
 
-  // --- REFACTORED LOGIC ---
+  Future<void> loadPetsFromSupabase() async {
+    try {
+      final int searchId = Player().id;
+      if (searchId == 0) return;
+
+      final response = await Supabase.instance.client
+          .from('tasktastic')
+          .select('pet_data')
+          .or('id.eq.$searchId,user_id.eq.$searchId') // Dual-ID Safety
+          .single();
+
+      final List<dynamic> remoteData = response['pet_data'] ?? [];
+
+      existingPets = remoteData.map((p) => Pet.fromJson(p)).toList();
+      notifyListeners();
+    } catch (e) {
+      debugPrint("DEBUG: [PET_LOAD_ERROR] $e");
+    }
+  }
+
+  // --- LOGIC ---
 
   void feedPet(Pet pet) {
     if (pet.foodLevel < 5) {
       pet.foodLevel++;
       if (pet.health < 5) pet.health++;
       notifyListeners();
-      syncPets(); // Save new state
+      syncPets();
     }
   }
 
@@ -292,14 +492,13 @@ class PetHolder with ChangeNotifier {
     if (pet.health < 5) {
       pet.health++;
       notifyListeners();
-      syncPets(); // Save new state
+      syncPets();
     }
   }
 
   void checkHungerForPets(BuildContext context) {
     bool stateChanged = false;
     for (var x in existingPets) {
-      // Check if it's time for this specific pet to get hungry
       if (timeSinceLastUpdate % x.elapsedTimeHungerIncrease == 0) {
         if (x.foodLevel <= 0) {
           if (x.health > 0) {
@@ -314,7 +513,7 @@ class PetHolder with ChangeNotifier {
     }
 
     if (stateChanged) {
-      killPets(context); // This calls notifyListeners and syncPets
+      killPets(context);
     }
   }
 
@@ -327,31 +526,10 @@ class PetHolder with ChangeNotifier {
     }
 
     notifyListeners();
-    syncPets(); // Finalize current state in DB
-  }
-
-  Future<void> loadPetsFromSupabase() async {
-    try {
-      final userId = Player().id;
-      if (userId == 0) return;
-
-      final response = await Supabase.instance.client
-          .from('tasktastic')
-          .select('pet_data')
-          .eq('user_id', userId)
-          .single();
-
-      final List<dynamic> remoteData = response['pet_data'] ?? [];
-
-      existingPets = remoteData.map((p) => Pet.fromJson(p)).toList();
-      notifyListeners();
-    } catch (e) {
-      debugPrint("DEBUG: [PET_LOAD_ERROR] $e");
-    }
+    syncPets();
   }
 
   void createNewPet(String name, int hungerRate, int petId) {
-    // Check if pet already exists to prevent duplicates
     if (!existingPets.any((p) => p.petId == petId)) {
       existingPets.add(
         Pet(name: name, elapsedTimeHungerIncrease: hungerRate, petId: petId),
@@ -418,42 +596,39 @@ class Player with ChangeNotifier {
   factory Player() => _player;
 
   String name = "AGENT_00";
+  bool isAdmin = false;
   int id = 0000001;
   int level = 1;
   int currentRank = 0;
-  int progression = 0; // This is your current XP
+  int progression = 0; 
   int wallet_amount = 99999;
   Map<String, int> inventory = {};
 
   int get player_wallet_amount => wallet_amount;
 
+  // --- DATABASE & RANKING ---
+
   Future<int> getPlayerRank() async {
     try {
       if (id == 0) return 0;
 
-      // 1. Fetch all players.
-      // We order by level DESC (highest first), then xp_level DESC (most progress first)
       final response = await Supabase.instance.client
           .from('tasktastic')
-          .select('user_id, level, xp_level') // Fetch level and xp_level
+          .select('id, user_id, level, xp_level') // Select both ID columns
           .order('level', ascending: false)
           .order('xp_level', ascending: false);
 
       final List<dynamic> leaderboard = response;
 
-      // 2. Find the index of the current player (using their unique user_id)
+      // Check both id and user_id for rank matching
       int rankIndex = leaderboard.indexWhere(
-        (player) => player['user_id'] == id,
+        (player) => player['id'] == id || player['user_id'] == id,
       );
 
-      // If the player isn't found in the table, return 0 or a default
       if (rankIndex == -1) return 0;
 
       int actualRank = rankIndex + 1;
-
-      debugPrint(
-        "DEBUG: [RANK_SYSTEM] Player ID $id is RANK: $actualRank (Level: $level)",
-      );
+      debugPrint("DEBUG: [RANK_SYSTEM] Player ID $id is RANK: $actualRank");
       return actualRank;
     } catch (e) {
       debugPrint("DEBUG: [RANK_ERROR] Calculation failed: $e");
@@ -470,29 +645,19 @@ class Player with ChangeNotifier {
     try {
       if (id == 0) return;
 
-      debugPrint("DEBUG: [INV_LOAD] Accessing vault for ID: $id...");
-
       final response = await Supabase.instance.client
           .from('tasktastic')
           .select('inventory')
-          .eq('user_id', id)
+          .or('id.eq.$id,user_id.eq.$id') // Dual-ID Safety
           .single();
 
       if (response['inventory'] != null) {
-        // Cast the dynamic JSON map to Map<String, int>
         final Map<String, dynamic> remoteInv = response['inventory'];
-
-        // We map the values to integers to ensure strict typing in Dart
         inventory = remoteInv.map((key, value) => MapEntry(key, value as int));
-
         notifyListeners();
-        debugPrint(
-          "DEBUG: [INV_LOAD] SUCCESS: ${inventory.length} unique items recovered.",
-        );
       }
     } catch (e) {
-      debugPrint("DEBUG: [INV_LOAD_ERROR] Failed to retrieve inventory: $e");
-      // Initialize with empty map if fetch fails to prevent null crashes
+      debugPrint("DEBUG: [INV_LOAD_ERROR] $e");
       inventory = {};
       notifyListeners();
     }
@@ -500,7 +665,7 @@ class Player with ChangeNotifier {
 
   Future<void> syncPlayerStats() async {
     try {
-      if (id == 0) return; // Prevent syncing if user isn't logged in
+      if (id == 0) return;
 
       await Supabase.instance.client
           .from('tasktastic')
@@ -508,26 +673,22 @@ class Player with ChangeNotifier {
             'money': wallet_amount,
             'xp_level': progression,
             'level': level,
-            'inventory': inventory, // <--- NEW
+            'inventory': inventory,
           })
-          .eq('user_id', id);
+          .or('id.eq.$id,user_id.eq.$id'); // Dual-ID Safety
 
       debugPrint("DEBUG: [DB_SYNC] Data & Inventory uploaded.");
     } catch (e) {
-      debugPrint("DEBUG: [DB_SYNC_ERROR] Sync failed: $e");
+      debugPrint("DEBUG: [DB_SYNC_ERROR] $e");
     }
   }
 
-  // --- XP SYSTEM LOGIC ---
+  // --- XP & REWARDS ---
 
-  /// Calculate required XP for the next level.
-  /// Formula: Level * 100 (e.g., Lvl 1 needs 100, Lvl 2 needs 200)
   int get xpToNextLevel => level * 100;
 
   void addXP(BuildContext context, int amount) {
     progression += amount;
-
-    // Check for level up loop (in case they gain massive XP at once)
     while (progression >= xpToNextLevel) {
       progression -= xpToNextLevel;
       level++;
@@ -538,24 +699,19 @@ class Player with ChangeNotifier {
   }
 
   void _triggerLevelUpUI(BuildContext context) {
-    // Using your custom Noir Popout
     NoirPopouts.showProtocolDialog(
       context,
       title: "LEVEL_UP_DETECTED",
-      body:
-          "System integrity increased to LEVEL $level.\nNew clearance codes generated.\n\nKeep pushing the network.",
+      body: "System integrity increased to LEVEL $level.\nNew clearance codes generated.",
       onConfirm: () {
-        // Optional: Reward the player for leveling up
         add_to_wallet(level * 50);
-        NoirPopouts.showToast(context, "CREDITS_BONUS_RELEASED");
       },
     );
   }
 
-  // --- EXISTING METHODS ---
+  // --- INVENTORY & WALLET ---
 
   void add_food(ShopItem item) {
-    // If item exists, increment counter; otherwise, set to 1
     inventory[item.name] = (inventory[item.name] ?? 0) + 1;
     notifyListeners();
     syncPlayerStats();
@@ -564,12 +720,7 @@ class Player with ChangeNotifier {
   void consumeFood(String itemName) {
     if (inventory.containsKey(itemName) && inventory[itemName]! > 0) {
       inventory[itemName] = inventory[itemName]! - 1;
-
-      // Clean up the map if quantity hits zero
-      if (inventory[itemName] == 0) {
-        inventory.remove(itemName);
-      }
-
+      if (inventory[itemName] == 0) inventory.remove(itemName);
       notifyListeners();
       syncPlayerStats();
     }
@@ -589,7 +740,6 @@ class Player with ChangeNotifier {
     }
   }
 }
-
 class ShopCategory {
   final String title;
   final List<ShopItem> items;
@@ -638,14 +788,14 @@ class ShopItem {
   }
 
   factory ShopItem.fromJson(Map<String, dynamic> json) {
-  return ShopItem(
-    name: json['name'],
-    description: json['description'],
-    price: json['price'],
-    // This is the fix: look up the string name in our safe map
-    icon: iconMapping[json['icon_name']] ?? Icons.help_outline, 
-    accentColor: Color(json['accent_hex']),
-    hungerRate: json['hunger_rate'] ?? 10,
-  );
-}
+    return ShopItem(
+      name: json['name'],
+      description: json['description'],
+      price: json['price'],
+      // This is the fix: look up the string name in our safe map
+      icon: iconMapping[json['icon_name']] ?? Icons.help_outline,
+      accentColor: Color(json['accent_hex']),
+      hungerRate: json['hunger_rate'] ?? 10,
+    );
+  }
 }

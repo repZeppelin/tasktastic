@@ -1,11 +1,12 @@
 import 'dart:async';
-import 'package:finaltasktastic/views/login_animation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:finaltasktastic/scripts/data_handler.dart';
 import 'package:finaltasktastic/views/ProfileDrawer.dart';
 import 'package:finaltasktastic/views/homepage.dart';
 import 'package:finaltasktastic/views/marketplace.dart';
+import 'package:finaltasktastic/views/secret.dart'; 
+import 'package:finaltasktastic/views/login_animation.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -20,13 +21,18 @@ class _HomePageState extends State<HomePage> {
   Timer? _periodicTimer;
   bool _showWelcome = true;
 
-  final List<Widget> _pages = [const Homepage(), const Marketplace()];
+  List<Widget> _getPages(bool isAdmin) {
+    return [
+      const Homepage(),
+      const Marketplace(),
+      if (isAdmin) const GlobalAuditPage(),
+    ];
+  }
 
   @override
   void initState() {
     super.initState();
     _periodicTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      // Use the singleton or provider instance correctly
       PetHolder().checkHungerForPets(context);
       PetHolder().timeSinceLastUpdate++;
     });
@@ -50,7 +56,9 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final playerName = context.select((Player p) => p.name);
+    final player = context.watch<Player>();
+    final bool isAdmin = player.isAdmin;
+    final List<Widget> pages = _getPages(isAdmin);
 
     return Scaffold(
       backgroundColor: const Color(0xFFD9D9D9),
@@ -67,7 +75,8 @@ class _HomePageState extends State<HomePage> {
           onPressed: _toggleDrawer,
         ),
         title: Text(
-          _selectedIndex == 0 ? ' [ STATUS: ACTIVE ] ' : ' [ MARKET: OPEN ] ',
+          _selectedIndex == 0 ? ' [ STATUS: ACTIVE ] ' : 
+          _selectedIndex == 1 ? ' [ MARKET: OPEN ] ' : ' [ SYSTEM: AUDIT ] ',
           style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.w900,
@@ -75,7 +84,10 @@ class _HomePageState extends State<HomePage> {
             letterSpacing: 2,
           ),
         ),
-        actions: [_buildWalletBadge(context)],
+        actions: [
+          if (isAdmin) _buildAdminBadge(),
+          _buildWalletBadge(context),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(24),
           child: Container(
@@ -87,7 +99,8 @@ class _HomePageState extends State<HomePage> {
                 const Text(">>> ", style: TextStyle(color: Colors.white, fontSize: 10, fontFamily: 'monospace')),
                 Expanded(
                   child: Text(
-                    _selectedIndex == 0 ? "SYNCING_HOME_DATA..." : "ACCESS_MARKET_PROTOCOLS...",
+                    _selectedIndex == 0 ? "SYNCING_HOME_DATA..." : 
+                    _selectedIndex == 1 ? "ACCESS_MARKET_PROTOCOLS..." : "SCANNING_SECURITY_LOGS...",
                     style: const TextStyle(color: Colors.white, fontSize: 10, fontFamily: 'monospace'),
                   ),
                 ),
@@ -99,20 +112,17 @@ class _HomePageState extends State<HomePage> {
       ),
       body: Stack(
         children: [
-          // 1. MAIN CONTENT
           Column(
             children: [
               Expanded(
                 child: NoirGlitchWrapper(
                   trigger: _selectedIndex,
-                  child: _pages[_selectedIndex],
+                  child: pages[_selectedIndex],
                 ),
               ),
-              _buildBottomNav(),
+              _buildBottomNav(isAdmin),
             ],
           ),
-
-          // 2. DIM OVERLAY (Blocks interaction with background)
           if (_isDrawerOpen)
             Positioned.fill(
               child: GestureDetector(
@@ -123,17 +133,13 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
             ),
-
-          // 3. FLOATING DRAWER (With IgnorePointer to prevent ghost interactions)
           IgnorePointer(
             ignoring: !_isDrawerOpen, 
             child: _buildAnimatedFloatingDrawer(),
           ),
-
-          // 4. WELCOME OVERLAY (Always on top)
           if (_showWelcome)
             NoirWelcomeOverlay(
-              username: playerName,
+              username: player.name,
               onComplete: () => setState(() => _showWelcome = false),
             ),
         ],
@@ -141,7 +147,48 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildBottomNav() {
+  Widget _buildAdminBadge() {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.5, end: 1.0),
+      duration: const Duration(seconds: 2),
+      curve: Curves.easeInOut,
+      onEnd: () {}, // No-op to trigger builder refresh if needed, or use repeating controller
+      builder: (context, value, child) {
+        // Simple repeating pulse effect
+        final opacity = (DateTime.now().millisecondsSinceEpoch % 2000) / 2000.0;
+        final currentOpacity = 0.4 + (0.6 * (opacity > 0.5 ? 1.0 - opacity : opacity) * 2);
+
+        return Container(
+          margin: const EdgeInsets.symmetric(vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            color: Colors.red.withOpacity(currentOpacity * 0.2),
+            border: Border.all(color: Colors.red.withOpacity(currentOpacity), width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.red.withOpacity(currentOpacity * 0.5),
+                blurRadius: 8,
+                spreadRadius: 1,
+              )
+            ],
+          ),
+          child: const Center(
+            child: Text(
+              "ADMIN_CLEARANCE",
+              style: TextStyle(
+                color: Colors.red,
+                fontSize: 8,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildBottomNav(bool isAdmin) {
     return IgnorePointer(
       ignoring: _isDrawerOpen,
       child: SafeArea(
@@ -159,6 +206,10 @@ class _HomePageState extends State<HomePage> {
               _buildNoirTab(0, Icons.grid_view_sharp, "HOME"),
               const VerticalDivider(width: 4, thickness: 4, color: Colors.black),
               _buildNoirTab(1, Icons.shopping_basket_sharp, "STORE"),
+              if (isAdmin) ...[
+                const VerticalDivider(width: 4, thickness: 4, color: Colors.black),
+                _buildNoirTab(2, Icons.gavel_sharp, "AUDIT"),
+              ],
             ],
           ),
         ),
@@ -175,9 +226,7 @@ class _HomePageState extends State<HomePage> {
         duration: const Duration(milliseconds: 200),
         tween: Tween(begin: 0.0, end: _isDrawerOpen ? 1.0 : 0.0),
         builder: (context, value, child) {
-          // Subtle flickering effect on entry
           double flickerOffset = _isDrawerOpen && value < 0.8 ? (value * 20) % 5 : 0;
-          
           return Opacity(
             opacity: value.clamp(0.0, 1.0),
             child: Transform.translate(
@@ -255,31 +304,40 @@ class _HomePageState extends State<HomePage> {
     );
   }
 }
+
 class NoirGlitchWrapper extends StatefulWidget {
   final Widget child;
   final int trigger;
-  const NoirGlitchWrapper({
-    super.key,
-    required this.child,
-    required this.trigger,
-  });
+  const NoirGlitchWrapper({super.key, required this.child, required this.trigger});
+
   @override
   State<NoirGlitchWrapper> createState() => _NoirGlitchWrapperState();
 }
 
 class _NoirGlitchWrapperState extends State<NoirGlitchWrapper> {
   bool _isGlitching = false;
+  Timer? _glitchTimer;
+
   @override
   void didUpdateWidget(NoirGlitchWrapper oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.trigger != oldWidget.trigger) _startGlitch();
+    if (widget.trigger != oldWidget.trigger) {
+      _startGlitch();
+    }
   }
 
-  void _startGlitch() async {
-    if (!mounted) return;
+  void _startGlitch() {
+    _glitchTimer?.cancel();
     setState(() => _isGlitching = true);
-    await Future.delayed(const Duration(milliseconds: 150));
-    if (mounted) setState(() => _isGlitching = false);
+    _glitchTimer = Timer(const Duration(milliseconds: 150), () {
+      if (mounted) setState(() => _isGlitching = false);
+    });
+  }
+
+  @override
+  void dispose() {
+    _glitchTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -289,27 +347,21 @@ class _NoirGlitchWrapperState extends State<NoirGlitchWrapper> {
       children: [
         widget.child,
         Transform.translate(
-          offset: const Offset(-8, 4),
+          offset: const Offset(-5, 2),
           child: Opacity(
-            opacity: 0.4,
+            opacity: 0.5,
             child: ColorFiltered(
-              colorFilter: const ColorFilter.mode(
-                Colors.cyan,
-                BlendMode.modulate,
-              ),
+              colorFilter: const ColorFilter.mode(Colors.cyan, BlendMode.screen),
               child: widget.child,
             ),
           ),
         ),
         Transform.translate(
-          offset: const Offset(8, -4),
+          offset: const Offset(5, -2),
           child: Opacity(
-            opacity: 0.4,
+            opacity: 0.5,
             child: ColorFiltered(
-              colorFilter: const ColorFilter.mode(
-                Colors.red,
-                BlendMode.modulate,
-              ),
+              colorFilter: const ColorFilter.mode(Colors.red, BlendMode.screen),
               child: widget.child,
             ),
           ),

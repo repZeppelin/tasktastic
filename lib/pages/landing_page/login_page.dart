@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:finaltasktastic/scripts/data_handler.dart';
 import 'package:finaltasktastic/pages/landing_page/signup_page.dart';
 import 'package:finaltasktastic/pages/main_page/widget_tree.dart';
@@ -31,54 +29,66 @@ class _LoginPageState extends State<LoginPage> {
     borderSide: BorderSide(color: Colors.black, width: 3),
   );
 
-  Future<void> _handleLogin() async {
-    if (_loginFormValidation.currentState!.validate()) {
-      setState(() => _isLoading = true);
-      debugPrint("DEBUG: === LOGIN_SEQUENCE_STARTED ===");
+Future<void> _handleLogin() async {
+  if (!_loginFormValidation.currentState!.validate()) return;
 
-      try {
-        // 1. Query table for a row matching BOTH username and plain-text password
-        final data = await Supabase.instance.client
-            .from('tasktastic')
-            .select()
-            .eq('username', _usernameController.text.trim())
-            .eq('password', _passwordController.text.trim()) // Plain text check
-            .maybeSingle();
+  setState(() => _isLoading = true);
+  debugPrint("DEBUG: === STARTING_OPERATIVE_AUTH ===");
 
-        if (data == null) {
-          debugPrint("DEBUG: AUTH_FAILED - No match for credentials.");
-          throw Exception("INVALID_OPERATIVE_OR_PASSWORD");
-        }
+  try {
+    // 1. Precise DB Query
+    final data = await Supabase.instance.client
+        .from('tasktastic')
+        .select()
+        .eq('username', _usernameController.text.trim())
+        .eq('password', _passwordController.text.trim())
+        .maybeSingle();
 
-        debugPrint("DEBUG: Access Granted for ID: ${data['user_id']}");
-
-        // 2. Map data to Player Singleton
-        await SessionManager.initializeOperativeSession(data);
-
-        // 3. Navigation
-        if (mounted) {
-          NoirPopouts.showToast(context, "AUTHENTICATION_SUCCESSFUL");
-          TaskTable().loadTasksFromSupabase();
-          Player().loadInventoryFromSupabase();
-          Navigator.pushAndRemoveUntil(
-            context, 
-            MaterialPageRoute(builder: (context) => const HomePage()), 
-            (route) => false
-          );
-        }
-      } catch (e) {
-        debugPrint("DEBUG: LOGIN_ERROR -> $e");
-        if (mounted) {
-          String errorMsg = e.toString().contains("INVALID") 
-            ? "ERROR: ACCESS_DENIED" 
-            : "SYSTEM_FAILURE: DATABASE_OFFLINE";
-          NoirPopouts.showToast(context, errorMsg, isError: true);
-        }
-      } finally {
-        if (mounted) setState(() => _isLoading = false);
-      }
+    if (data == null) {
+      throw Exception("AUTH_FAILURE: INVALID_CREDENTIALS");
     }
+
+    // 2. CRITICAL: Register identity in the Singleton BEFORE loading data
+    final player = Player();
+    player.id = data['id']; // ID 19
+    player.name = data['username'] ?? "UNKNOWN_OPERATIVE";
+    player.isAdmin = data['admin'] ?? false;
+    player.wallet_amount = data['money'] ?? 0;
+
+    debugPrint("DEBUG: ID_${player.id}_REGISTERED. STARTING_DATA_RECOVERY...");
+
+    // 3. SECURE DATA LOAD: Wait for both Tasks and Inventory to finish
+    // This ensures TaskTable.taskList is populated before we switch screens
+    await Future.wait([
+      TaskTable().loadTasksFromSupabase(),
+      player.loadInventoryFromSupabase(),
+    ]);
+
+    // 4. Session Persistence (Optional helper)
+    await SessionManager.initializeOperativeSession(data);
+
+    if (mounted) {
+      NoirPopouts.showToast(context, "WELCOME_BACK_OPERATIVE");
+      
+      // Use pushReplacement so they can't 'back' into the login screen
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => const HomePage()),
+        (route) => false,
+      );
+    }
+  } catch (e) {
+    debugPrint("DEBUG: AUTH_CRITICAL_ERR -> $e");
+    if (mounted) {
+      String msg = e.toString().contains("AUTH_FAILURE") 
+          ? "ACCESS_DENIED: Check Credentials" 
+          : "NETWORK_FAILURE: DB_UNREACHABLE";
+      NoirPopouts.showToast(context, msg, isError: true);
+    }
+  } finally {
+    if (mounted) setState(() => _isLoading = false);
   }
+}
 
   @override
   Widget build(BuildContext context) {
