@@ -5,7 +5,7 @@ Tasktastic is an application that was built for gamified productivity for wide s
 Tasktastic aims to provide cloud-based task-tracking which allows seamless switching between devices. The simplistic and concise UI makes it easy on the users rather overloading them with information.
 
 # How to install? 
-Here lies all the current and past built apks/applications. Contact the admin to avail different versions.
+Here are all the current and past built apks/applications. Contact the admin to avail different versions.
 https://drive.google.com/drive/folders/1wI9ZhqKbXtFLI6XKNm-gTYROGSACUvrt?usp=drive_link
 
 # Limitations
@@ -21,6 +21,10 @@ Currently, the most basic systems are incorporated.
 - Leaderboard System
 - Player Inventory System
 
-## A.1 TASK SYSTEM AND MARKET SYSTEM 
+### TASK SYSTEM AND MARKET SYSTEM 
 The only way to earn coins is by accomplishing tasks at different difficulty levels. 
+### LEADERBOARD SYSTEM
+Users can have their rank anonymously displayed. Their rankings are not publicly displayed.
+### ANTI-SPEEDRUN TASK SUBMISSION SYSTEM
+If a task is flagged as a suspicious task by the system, system administrators can access the approval system in place by logging into the application as well.
 
